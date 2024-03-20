@@ -1,4 +1,5 @@
 import multiprocessing
+import threading
 from useful import *
 from shape_classes import *
 import bisect
@@ -6,14 +7,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 class Cell_extractor(multiprocessing.Process):
-    def __init__(self, cell_queue, partial_cell_queue, path, N_windows, window_event, extractor_finish_event):
+    def __init__(self, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, extractor_conn):
         multiprocessing.Process.__init__(self)
         self.cell_queue = cell_queue  
         self.partial_cell_queue = partial_cell_queue  
         self.path = path
-        self.N_windows = N_windows
-        self.window_event = window_event
-        self.extractor_finish_event = extractor_finish_event
+        self.extractor_done_event = extractor_done_event
+        self.row_done_event = row_done_event
+        self.extractor_conn = extractor_conn
     
     def run(self):
         self.name = multiprocessing.current_process().name
@@ -25,9 +26,10 @@ class Cell_extractor(multiprocessing.Process):
         win_row_length = int(im_row_length/num_window_row)
         win_col_length = int(im_col_length/num_window_col)
         
-        total_windows = num_window_row*num_window_col
+        # total_windows = num_window_row*num_window_col
 
-        i_windows = 0  # track how many windows have been processed
+        # i_windows = 0  # track how many windows have been processed
+        i_cells = 0 # track how many cells have been collected for the current row. Currently counting complete cells and partial cells of type 8.
         
         for win_row_index in range(0,num_window_row):
             for win_col_index in range(0,num_window_col):
@@ -53,11 +55,7 @@ class Cell_extractor(multiprocessing.Process):
 
                 for blob in blobs_layout:
                     blob_img = blob.image
-                    # print(blob_img)
-                    # plt.imshow(blob_img,cmap = 'gray')
-                    # plt.show()
                     (min_row, min_col, max_row, max_col) = blob.bbox
-                    # print(blob.bbox)
                     
                     pkt = shape_packet()
                     
@@ -66,8 +64,7 @@ class Cell_extractor(multiprocessing.Process):
                     # store centroid of shape coordinate in coordinate of original image
                     # print(start_row,start_col)
                     pkt.centroid = ( int( blob.centroid[0]+start_row), int(blob.centroid[1]+start_col)) # centroid from skii_image is wrt window image coordinates
-                    # print(pkt.centroid)
-                    # print(blob_img.shape)
+
                     
                     if ( max_col == win_col_length ) :
                         pkt.packet_type = 4
@@ -76,90 +73,161 @@ class Cell_extractor(multiprocessing.Process):
                     elif ( min_col == 0 ) :
                         pkt.packet_type = 8
                         window_partial_cells.type_8_pkts.append(pkt)
-                        # print("found type",pkt.packet_type)
+                        i_cells = i_cells + 1
                     else:
                         # shape_pkts.append(pkt)
                         self.cell_queue.put(pkt)
-                        # print("found type",pkt.packet_type)
+                        i_cells = i_cells + 1
                 
                 self.partial_cell_queue.put(window_partial_cells)
                 
-                i_windows = i_windows + 1
+                # i_windows = i_windows + 1
 
-                if(i_windows == self.N_windows):
-                    self.window_event.set()
-                    i_windows = 0
-        
-        self.extractor_finish_event.set() # signal end of processing all the windows
+                # if(i_windows == self.N_windows):
+                #     self.window_event.set()
+                #     i_windows = 0
+            
+            
+            # send the number of cells
+            self.extractor_conn.send(i_cells)
+            i_cells = 0 # reset the cell counter to zero for the next row of the windows
+            self.row_done_event.set() # one row of the windows have been processed
+
+        self.extractor_done_event.set() # signal end of processing all the windows
         # print(f"{self.name} {self.pid}: all packets sent. Now exiting")
 
 
 class Cell_collector(multiprocessing.Process):
-    def __init__(self, cell_queue, sorted_cell_queue, N_cells, window_event, extractor_finish_event, merger_finish_event): 
+    def __init__(self, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, row_done_event, collector_conn): 
         multiprocessing.Process.__init__(self)
         self.cell_queue = cell_queue  
         self.sorted_cell_queue = sorted_cell_queue
-        self.N_cells = N_cells
-        self.window_event = window_event
-        self.extractor_finish_event = extractor_finish_event
-        self.merger_finish_event = merger_finish_event
+        self.extractor_done_event = extractor_done_event
+        self.merger_done_event = merger_done_event
+        self.row_done_event = row_done_event
+        self.collector_conn = collector_conn
         self.sorted_cell_list = []
+        self.collect_sort_thread = threading.Thread(target=self.collect_sort)
+        self.collect_sort_thread_running = False
     
-    def run(self):
-        self.name = multiprocessing.current_process().name
+    def collect_sort(self):
 
         while True:
+            if self.extractor_done_event.is_set() and self.merger_done_event.is_set():
+                if not self.cell_queue.empty():
+                    pkt = self.cell_queue.get()
+                    bisect.insort(self.sorted_cell_list , pkt)
+                    # print(f'{self.name} lenght of list {len(self.sorted_cell_list)}')
+                else: 
+                    self.collect_sort_thread_running = False
+                    break
+            else:
+                if not self.cell_queue.empty():
+                        pkt = self.cell_queue.get()
+                        bisect.insort(self.sorted_cell_list , pkt)
+                        # print(f'{self.name} lenght of list {len(self.sorted_cell_list)}')
+
+        print(f'\n {self.name} Child thread exiting')    
+
+    def run(self):
+        
+        self.name = multiprocessing.current_process().name
+        self.collect_sort_thread.start()
+        self.collect_sort_thread_running = True
+        
+        while True:
+
+            if self.collect_sort_thread_running:
+                if self.row_done_event.is_set():
+                    self.row_done_event.clear()     
+                    cell_count = self.collector_conn.recv()  # Number of cells in the current row
+                    # print(f'{self.name} Number of cells in current row = {cell_count}')
+
+                    # if len(self.sorted_cell_list) == 0:
+                    #     pass
+                    # elif len(self.sorted_cell_list)> 0 and len(self.sorted_cell_list) < cell_count:
+                    #     self.sorted_cell_queue.put(self.sorted_cell_list)
+                    #     self.sorted_cell_list = []
+                    # else:
+                    #     self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
+                    #     del self.sorted_cell_list[:cell_count]
+
+                    while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
+                        pass
+                    
+                    self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
+                    del self.sorted_cell_list[:cell_count]
+                    
+            else: # when the child thread has finished, send whatever cells are in the list to the queue
+                self.sorted_cell_queue.put(self.sorted_cell_list)
+                self.sorted_cell_list = []
+                break
+
+        print(f'\n {self.name} Parent thread exiting')
+
+
+            # if not self.cell_queue.empty():
+            #         pkt = self.cell_queue.get()
+            #         bisect.insort(self.sorted_cell_list , pkt)
+            #         print(f'{self.name} lenght of list {len(self.sorted_cell_list)}')
+
             # if self.window_event.is_set():
             #     self.window_event.clear()                 
-            #     if len(self.sorted_cell_list) == 0:
-            #         pass
-            #     elif len(self.sorted_cell_list)> 0 and len(self.sorted_cell_list) < self.N_cells:
-            #         self.sorted_cell_queue.put(self.sorted_cell_list)
-            #         self.sorted_cell_list = []
-            #     else:
-            #         self.sorted_cell_queue.put(self.sorted_cell_list[:self.N_cells])
-            #         del self.sorted_cell_list[:self.N_cells]
+                # if len(self.sorted_cell_list) == 0:
+                #     pass
+                # elif len(self.sorted_cell_list)> 0 and len(self.sorted_cell_list) < self.N_cells:
+                #     self.sorted_cell_queue.put(self.sorted_cell_list)
+                #     self.sorted_cell_list = []
+                # else:
+                #     self.sorted_cell_queue.put(self.sorted_cell_list[:self.N_cells])
+                #     del self.sorted_cell_list[:self.N_cells]
             
             # # el
-            # if self.extractor_finish_event.is_set():
+            # if self.extractor_done_event.is_set():
             #     print(len(self.sorted_cell_list))
             #     self.sorted_cell_queue.put(self.sorted_cell_list)
             #     self.sorted_cell_list = []
-            #     self.extractor_finish_event.clear()
+            #     self.extractor_done_event.clear()
                 
             #     # self.sorted_cell_queue.put(self.sorted_cell_list[:self.N_cells])
             #     # del self.sorted_cell_list[:self.N_cells]
-                         
+            # if self.row_done_event.is_set():
+            #     self.row_done_event.clear()     
+            #     cell_count = self.collector_conn.recv()  
+                # print(f'{self.name} Number of cells in current row = {cell_count}')
+                # print(self.name, " list length",len(self.sorted_cell_list))
             
             # el
-            if not self.cell_queue.empty():
-                pkt = self.cell_queue.get()
-                bisect.insort(self.sorted_cell_list , pkt)
-                print(len(self.sorted_cell_list))
-                if len(self.sorted_cell_list ) == 8:
-                    for xx in self.sorted_cell_list:
-                        plt.imshow( xx.blob_img )
-                        plt.show()  
+            # if not self.cell_queue.empty():
+            #     pkt = self.cell_queue.get()
+            #     bisect.insort(self.sorted_cell_list , pkt)
+            #     print(len(self.sorted_cell_list))
+                
+                # if len(self.sorted_cell_list ) == 8:
+                #     for xx in self.sorted_cell_list:
+                #         plt.imshow( xx.blob_img )
+                #         plt.show()  
             # print(f"{self.name}: {self.pid} Cell received with centroid= {pkt.centroid}")
             # plt.imshow( pkt.blob_img )
             # plt.show()
+        # print(f'{self.name} Parent thread terminating')  
 
 class Cell_merger(multiprocessing.Process):
-    def __init__(self, partial_cell_queue, cell_queue, extractor_finish_event, merger_finish_event):
+    def __init__(self, partial_cell_queue, cell_queue, extractor_done_event, merger_done_event):
         multiprocessing.Process.__init__(self)
         self.partial_cell_queue = partial_cell_queue  
         self.cell_queue = cell_queue  
-        self.extractor_finish_event = extractor_finish_event
-        self.merger_finish_event = merger_finish_event
+        self.extractor_done_event = extractor_done_event
+        self.merger_done_event = merger_done_event
     
     def run(self):
         self.name = multiprocessing.current_process().name
 
         while True:
 
-            if self.extractor_finish_event.is_set(): 
+            if self.extractor_done_event.is_set(): 
                 if self.partial_cell_queue.empty(): # if queue is empty, signal finish event and terminate the process, else continue
-                    self.merger_finish_event.set()
+                    self.merger_done_event.set()
                     break
                 else:
                     window_partial_cells = self.partial_cell_queue.get()
