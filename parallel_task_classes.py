@@ -21,8 +21,8 @@ class Cell_extractor(multiprocessing.Process):
 
         image = read_input(self.path)
         im_row_length, im_col_length = image.shape
-        num_window_row = 2
-        num_window_col = 3
+        num_window_row = 18
+        num_window_col = 5
         win_row_length = int(im_row_length/num_window_row)
         win_col_length = int(im_col_length/num_window_col)
         
@@ -44,6 +44,7 @@ class Cell_extractor(multiprocessing.Process):
                 
                 # plt.imshow(current_window)
                 # plt.show()
+
                 img_bin = my_preprocessing(current_window)
                 # plt.imshow(img_bin, cmap = 'gray')
                 # plt.show()
@@ -69,11 +70,12 @@ class Cell_extractor(multiprocessing.Process):
                     if ( max_col == win_col_length ) :
                         pkt.packet_type = 4
                         window_partial_cells.type_4_pkts.append(pkt)
+                        i_cells = i_cells + 1
                         # # print("found type",pkt.packet_type)
                     elif ( min_col == 0 ) :
                         pkt.packet_type = 8
                         window_partial_cells.type_8_pkts.append(pkt)
-                        i_cells = i_cells + 1
+                        
                     else:
                         # shape_pkts.append(pkt)
                         self.cell_queue.put(pkt)
@@ -141,7 +143,7 @@ class Cell_collector(multiprocessing.Process):
                 if self.row_done_event.is_set():
                     self.row_done_event.clear()     
                     cell_count = self.collector_conn.recv()  # Number of cells in the current row
-                    # print(f'{self.name} Number of cells in current row = {cell_count}')
+                    print(f'{self.name} Number of cells in current row = {cell_count}')
 
                     # if len(self.sorted_cell_list) == 0:
                     #     pass
@@ -227,9 +229,11 @@ class Cell_merger(multiprocessing.Process):
 
             if self.extractor_done_event.is_set(): 
                 if self.partial_cell_queue.empty(): # if queue is empty, signal finish event and terminate the process, else continue
+                    # print(f"{self.name} partial cell queue is empty, merger terminating")
                     self.merger_done_event.set()
                     break
                 else:
+                    print(f"{self.name} Extractor terminated, ,merger finishing soon")
                     window_partial_cells = self.partial_cell_queue.get()
                     window_coordinates = window_partial_cells.window_coordinates
                     
@@ -240,15 +244,16 @@ class Cell_merger(multiprocessing.Process):
                         self.merge_cells(window_x, window_x_1)
                         window_x = window_x_1
             else:
-                window_partial_cells = self.partial_cell_queue.get()
-                window_coordinates = window_partial_cells.window_coordinates
-                
-                if window_coordinates[1] == 0:    # Check if it is start of a row 
-                    window_x = window_partial_cells
-                else:
-                    window_x_1 = window_partial_cells
-                    self.merge_cells(window_x, window_x_1)
-                    window_x = window_x_1
+                if not self.partial_cell_queue.empty(): 
+                    window_partial_cells = self.partial_cell_queue.get()
+                    window_coordinates = window_partial_cells.window_coordinates
+                    
+                    if window_coordinates[1] == 0:    # Check if it is start of a row 
+                        window_x = window_partial_cells
+                    else:
+                        window_x_1 = window_partial_cells
+                        self.merge_cells(window_x, window_x_1)
+                        window_x = window_x_1
             # print(f"{self.name}: {self.pid} Partial cell received with window coordinate= {window_partial_cells.window_coordinates}")
             # plt.imshow( pkt.blob_img )
             # plt.show()
@@ -335,7 +340,8 @@ class Cell_merger(multiprocessing.Process):
                     merged_pkt.set_centroid()
                     
                     self.cell_queue.put(merged_pkt)
-
+                    # print(f'{self.name} merged and sent 1 packet')
+                    
                     # shape_pkts.append(merged_pkt)
                     
                     # plt.imshow(merged_pkt.blob_img)
