@@ -96,11 +96,12 @@ class Cell_extractor(multiprocessing.Process):
             self.row_done_event.set() # one row of the windows have been processed
 
         self.extractor_done_event.set() # signal end of processing all the windows
+        
         # print(f"{self.name} {self.pid}: all packets sent. Now exiting")
 
 
 class Cell_collector(multiprocessing.Process):
-    def __init__(self, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, row_done_event, collector_conn): 
+    def __init__(self, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, row_done_event, collector_conn, collector_done_event): 
         multiprocessing.Process.__init__(self)
         self.cell_queue = cell_queue  
         self.sorted_cell_queue = sorted_cell_queue
@@ -108,6 +109,7 @@ class Cell_collector(multiprocessing.Process):
         self.merger_done_event = merger_done_event
         self.row_done_event = row_done_event
         self.collector_conn = collector_conn
+        self.collector_done_event = collector_done_event
         self.sorted_cell_list = []
         self.collect_sort_thread = threading.Thread(target=self.collect_sort)
         self.collect_sort_thread_running = False
@@ -143,16 +145,7 @@ class Cell_collector(multiprocessing.Process):
                 if self.row_done_event.is_set():
                     self.row_done_event.clear()     
                     cell_count = self.collector_conn.recv()  # Number of cells in the current row
-                    print(f'{self.name} Number of cells in current row = {cell_count}')
-
-                    # if len(self.sorted_cell_list) == 0:
-                    #     pass
-                    # elif len(self.sorted_cell_list)> 0 and len(self.sorted_cell_list) < cell_count:
-                    #     self.sorted_cell_queue.put(self.sorted_cell_list)
-                    #     self.sorted_cell_list = []
-                    # else:
-                    #     self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
-                    #     del self.sorted_cell_list[:cell_count]
+                    # print(f'{self.name} Number of cells in current row = {cell_count}')
 
                     while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
                         pass
@@ -160,9 +153,13 @@ class Cell_collector(multiprocessing.Process):
                     self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
                     del self.sorted_cell_list[:cell_count]
                     
-            else: # when the child thread has finished, send whatever cells are in the list to the queue
-                self.sorted_cell_queue.put(self.sorted_cell_list)
-                self.sorted_cell_list = []
+            else: # when the child thread has finished, send whatever cells are in the list to the queue and exit
+                
+                if len(self.sorted_cell_list) > 0:
+                    self.sorted_cell_queue.put(self.sorted_cell_list)
+                    self.sorted_cell_list = []
+                
+                self.collector_done_event.set()
                 break
 
         print(f'\n {self.name} Parent thread exiting')
@@ -233,7 +230,7 @@ class Cell_merger(multiprocessing.Process):
                     self.merger_done_event.set()
                     break
                 else:
-                    print(f"{self.name} Extractor terminated, ,merger finishing soon")
+                    # print(f"{self.name} Extractor terminated, ,merger finishing soon")
                     window_partial_cells = self.partial_cell_queue.get()
                     window_coordinates = window_partial_cells.window_coordinates
                     
@@ -352,10 +349,13 @@ class Cell_merger(multiprocessing.Process):
                     break
 
 class Cell_validation(multiprocessing.Process):
-    def __init__(self, sorted_cell_queue_layout, sorted_cell_queue_SEM):
+
+    def __init__(self, sorted_cell_queue_layout, sorted_cell_queue_SEM, collector_done_event_layout, collector_done_event_SEM):
         multiprocessing.Process.__init__(self)
         self.sorted_cell_queue_layout = sorted_cell_queue_layout  
         self.sorted_cell_queue_SEM = sorted_cell_queue_SEM  
+        self.collector_done_event_layout = collector_done_event_layout
+        self.collector_done_event_SEM = collector_done_event_SEM
     
     def run(self):
         self.name = multiprocessing.current_process().name
@@ -363,6 +363,10 @@ class Cell_validation(multiprocessing.Process):
         while True:
             list = self.sorted_cell_queue_layout.get()
             print(f"{self.name}: {self.pid} list received with length= {len(list)}")
+
+            if self.collector_done_event_layout.is_set() and self.collector_done_event_SEM.is_set():
+                print(f'{self.name} is now exiting')
+                break
             # for pkt in list:
             #     plt.imshow(pkt.blob_img)
             #     plt.show()
