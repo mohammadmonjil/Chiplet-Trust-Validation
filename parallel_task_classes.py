@@ -6,6 +6,8 @@ import bisect
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+import time
+from fourier import *
 
 class Cell_extractor(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, extractor_conn):
@@ -68,7 +70,6 @@ class Cell_extractor(multiprocessing.Process):
                     pkt.bbox = (min_row+start_row, min_col+start_col, max_row+start_row, max_col+start_col) # we preserve coordinates 
                     pkt.blob_img = blob_img
                     # store centroid of shape coordinate in coordinate of original image
-                    # print(start_row,start_col)
                     pkt.centroid = ( int( blob.centroid[0]+start_row), int(blob.centroid[1]+start_col)) # centroid from skii_image is wrt window image coordinates
 
                     
@@ -87,13 +88,6 @@ class Cell_extractor(multiprocessing.Process):
                         i_cells = i_cells + 1
                 
                 self.partial_cell_queue.put(window_partial_cells)
-                
-                # i_windows = i_windows + 1
-
-                # if(i_windows == self.N_windows):
-                #     self.window_event.set()
-                #     i_windows = 0
-            
             
             # send the number of cells
             self.extractor_conn.send(i_cells)
@@ -316,17 +310,77 @@ class Cell_validation(multiprocessing.Process):
         self.sorted_cell_queue_SEM = sorted_cell_queue_SEM  
         self.collector_done_event_layout = collector_done_event_layout
         self.collector_done_event_SEM = collector_done_event_SEM
+        self.cell_list_SEM = []
+        self.cell_list_layout = []
+        self.rcv_cells_layout_thread_running = False
+        self.rcv_cells_SEM_thread_running = False
+        self.rcv_cells_layout_thread = threading.Thread(target= self.rcv_cells, args =(self.sorted_cell_queue_layout, self.cell_list_layout, 
+                                                                                       self.collector_done_event_layout, 'layout' ) )
+        self.rcv_cells_SEM_thread = threading.Thread(target=self.rcv_cells, args =(self.sorted_cell_queue_SEM, self.cell_list_SEM, 
+                                                                                   self.collector_done_event_SEM, 'SEM' ))
+        self.cell_size = 10
     
     def run(self):
         self.name = multiprocessing.current_process().name
+        self.rcv_cells_layout_thread.start()
+        self.rcv_cells_layout_thread_running = True
+        self.rcv_cells_SEM_thread.start()
+        self.rcv_cells_SEM_thread_running = True
 
         while True:
-            list = self.sorted_cell_queue_layout.get()
-            print(f"{self.name}: {self.pid} list received with length= {len(list)}")
+            # time.sleep(.1)
 
-            if self.collector_done_event_layout.is_set() and self.collector_done_event_SEM.is_set():
+            # print(f"{self.name}: layout list length= {len(self.cell_list_layout)}")
+            # print(f"{self.name}: SEM list length= {len(self.cell_list_SEM)}")
+
+            if not self.rcv_cells_layout_thread_running and not self.rcv_cells_SEM_thread_running:
+                
+                if len(self.cell_list_layout) > 0 and len(self.cell_list_SEM) > 0: 
+                    self.validate( self.cell_list_layout, self.cell_list_SEM)
+                    self.cell_list_layout = []
+                    self.cell_list_SEM = []
+
                 print(f'{self.name} is now exiting')
                 break
-            # for pkt in list:
-            #     plt.imshow(pkt.blob_img)
-            #     plt.show()
+            else:
+                if len(self.cell_list_layout) > self.cell_size and len(self.cell_list_SEM) > self.cell_size: 
+                    self.validate( self.cell_list_layout[:self.cell_size], self.cell_list_SEM[:self.cell_size])
+                    del self.cell_list_layout[:self.cell_size]
+                    del self.cell_list_SEM[:self.cell_size]
+
+
+    def validate(self, cell_list_layout, cell_list_SEM ):
+
+        for pkt_layout, pkt_SEM in zip(cell_list_layout, cell_list_SEM):
+            # contour = detect_contour(filled_image)
+            img = pkt_layout.blob_img.astype(np.uint8) * 255 
+            contour, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            gx,gy = sample_polygon_uniformly(contour[0],50)
+            contour_sampled = np.column_stack((gx, gy)).astype(np.int32)
+            f_descriptors_layout = fourier_descriptors(contour_sampled)
+
+            img = pkt_SEM.blob_img.astype(np.uint8) * 255 
+            contour, _ = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            gx,gy = sample_polygon_uniformly(contour[0],50)
+            contour_sampled = np.column_stack((gx, gy)).astype(np.int32)
+            f_descriptors_SEM = fourier_descriptors(contour_sampled)
+
+            f_similarity = calculate_similarity(f_descriptors_layout, f_descriptors_SEM)
+            
+            # print(f'{self.name} similarity value = {f_similarity}')
+
+    def rcv_cells(self, cell_queue, cell_list, collector_done_event, type_name):
+        
+        while True:
+            if collector_done_event.is_set():
+                if not cell_queue.empty():
+                    cell_list.extend(cell_queue.get())                  
+                else:
+                    if type_name == 'layout':
+                        self.rcv_cells_layout_thread_running = False
+                    elif type_name == 'SEM':
+                        self.rcv_cells_SEM_thread_running = False
+                    break
+            else:
+                if not cell_queue.empty():
+                    cell_list.extend(cell_queue.get()) 
