@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 from PIL import Image
 
 class Cell_extractor(multiprocessing.Process):
-    def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, extractor_conn):
+    def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, pipe_from_extractor_head):
         multiprocessing.Process.__init__(self)
         self.type_name = type_name
         self.cell_queue = cell_queue  
@@ -16,14 +16,14 @@ class Cell_extractor(multiprocessing.Process):
         self.path = path
         self.extractor_done_event = extractor_done_event
         self.row_done_event = row_done_event
-        self.extractor_conn = extractor_conn
+        self.pipe_from_extractor_head = pipe_from_extractor_head
     
     def run(self):
         self.name = multiprocessing.current_process().name + self.type_name
 
         # image = read_input(self.path)
         image = Image.open(self.path)
-        im_row_length, im_col_length = image.size
+        im_col_length, im_row_length  = image.size
         num_window_row = 9
         num_window_col = 3
         win_row_length = int(im_row_length/num_window_row)
@@ -44,7 +44,7 @@ class Cell_extractor(multiprocessing.Process):
                 end_col = min((win_col_index + 1) * win_col_length, im_col_length)
         
                 # current_window = image[start_row:end_row, start_col:end_col]
-                current_window = image.crop((start_row, start_col, end_row, end_col))
+                current_window = image.crop(( start_col, start_row, end_col, end_row ))
                 # current_window = np.array(current_window)[:,:,0] 
                 # plt.imshow(current_window)
                 # plt.show()
@@ -52,7 +52,7 @@ class Cell_extractor(multiprocessing.Process):
                 img_bin = my_preprocessing( np.array(current_window)[:,:,0]  )
                 plt.imshow(img_bin, cmap = 'gray')
                 plt.show()
-                # print(img_bin)
+                print(img_bin)
                 # perform prepcossing
                 # layout, layout_denoised, layout_bin, th = pre_processing(layout_path)
                 blobs_layout = connected_components(img_bin)
@@ -96,7 +96,7 @@ class Cell_extractor(multiprocessing.Process):
             
             
             # send the number of cells
-            self.extractor_conn.send(i_cells)
+            self.pipe_from_extractor_head.send(i_cells)
             i_cells = 0 # reset the cell counter to zero for the next row of the windows
             self.row_done_event.set() # one row of the windows have been processed
 
@@ -106,7 +106,9 @@ class Cell_extractor(multiprocessing.Process):
 
 
 class Cell_collector(multiprocessing.Process):
-    def __init__(self, type_name, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, row_done_event, collector_conn, collector_done_event): 
+    def __init__(self, type_name, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, 
+                 row_done_event, pipe_from_extractor_tail, collector_done_event,
+                 pipe_from_collector_head, row_event_collector_validator): 
         multiprocessing.Process.__init__(self)
         self.type_name = type_name
         self.cell_queue = cell_queue  
@@ -114,8 +116,10 @@ class Cell_collector(multiprocessing.Process):
         self.extractor_done_event = extractor_done_event
         self.merger_done_event = merger_done_event
         self.row_done_event = row_done_event
-        self.collector_conn = collector_conn
+        self.pipe_from_extractor_tail = pipe_from_extractor_tail
         self.collector_done_event = collector_done_event
+        self.pipe_from_collector_head = pipe_from_collector_head
+        self.row_event_collector_validator = row_event_collector_validator
         self.sorted_cell_list = []
         self.collect_sort_thread = threading.Thread(target=self.collect_sort)
         self.collect_sort_thread_running = False
@@ -150,7 +154,9 @@ class Cell_collector(multiprocessing.Process):
             if self.collect_sort_thread_running:
                 if self.row_done_event.is_set():
                     self.row_done_event.clear()     
-                    cell_count = self.collector_conn.recv()  # Number of cells in the current row
+                    self.row_event_collector_validator.set()                    
+                    cell_count = self.pipe_from_extractor_tail.recv()  # Number of cells in the current row
+                    self.pipe_from_collector_head.send(cell_count) # send the number of cells to the validator
                     # print(f'{self.name} Number of cells in current row = {cell_count}')
 
                     while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
@@ -310,12 +316,20 @@ class Cell_merger(multiprocessing.Process):
 
 class Cell_validation(multiprocessing.Process):
 
-    def __init__(self, sorted_cell_queue_layout, sorted_cell_queue_SEM, collector_done_event_layout, collector_done_event_SEM):
+    def __init__(self, sorted_cell_queue_layout, sorted_cell_queue_SEM, 
+                                      collector_done_event_layout, collector_done_event_SEM,
+                                      pipe_from_collector_tail_layout, pipe_from_collector_tail_SEM, 
+                                      row_event_collector_validator_layout, row_event_collector_validator_SEM):
+        
         multiprocessing.Process.__init__(self)
         self.sorted_cell_queue_layout = sorted_cell_queue_layout  
         self.sorted_cell_queue_SEM = sorted_cell_queue_SEM  
         self.collector_done_event_layout = collector_done_event_layout
         self.collector_done_event_SEM = collector_done_event_SEM
+        self.pipe_from_collector_tail_layout = pipe_from_collector_tail_layout
+        self.pipe_from_collector_tail_SEM = pipe_from_collector_tail_SEM
+        self.row_event_collector_validator_layout = row_event_collector_validator_layout
+        self.row_event_collector_validator_SEM = row_event_collector_validator_SEM
     
     def run(self):
         self.name = multiprocessing.current_process().name
