@@ -1,11 +1,11 @@
 row = 0, cells in layout = 18, cells in SEM = 18 
 row = 1, cells in layout = 18, cells in SEM = 18 
-Cell removal detected at row = 2, cells in layout = 18, cells in SEM = 17 
+Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell modification detected at row = 1Cell removal detected at row = 2, cells in layout = 18, cells in SEM = 17 
 row = 3, cells in layout = 18, cells in SEM = 18 
 row = 4, cells in layout = 18, cells in SEM = 18 
 row = 5, cells in layout = 18, cells in SEM = 18 
 row = 6, cells in layout = 18, cells in SEM = 18 
-Cell removal detected at row = 7, cells in layout = 18, cells in SEM = 17 
+row = 7, cells in layout = 18, cells in SEM = 18 
 row = 8, cells in layout = 18, cells in SEM = 18 
 Total cells in layout = 162
-Total cells in SEM = 160
+Total cells in SEM = 161

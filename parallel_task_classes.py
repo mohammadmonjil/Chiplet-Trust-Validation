@@ -387,7 +387,7 @@ class Cell_validation(multiprocessing.Process):
                 self.cell_list_SEM = []
             else:
                 self.report.write(f'row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
-                # self.shape_validate( self.cell_list_layout[:N_cells_layout], self.cell_list_SEM[:N_cells_SEM])
+                self.shape_validate( self.cell_list_layout[:N_cells_layout], self.cell_list_SEM[:N_cells_SEM])
                 del self.cell_list_layout[:N_cells_layout]
                 del self.cell_list_SEM[:N_cells_SEM]       
             self.rows = self.rows + 1
@@ -396,6 +396,7 @@ class Cell_validation(multiprocessing.Process):
 
         for pkt_layout, pkt_SEM in zip(cell_list_layout, cell_list_SEM):
             f_similarity = calculate_similarity(pkt_layout.fourier, pkt_SEM.fourier)
+            # print(f_similarity)
 
             if f_similarity < self.threshold:
                 self.report.write(f'Cell modification detected at row = {self.rows}')
