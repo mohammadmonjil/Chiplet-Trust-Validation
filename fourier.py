@@ -5,7 +5,7 @@ import math
 import cv2
 import numpy as np
 
-def fourier_descriptors(contour):
+def fourier_descriptors(contour, num_coefficients = None):
     # Convert the contour points to complex numbers
     contour_complex = np.empty(len(contour), dtype=complex)
     contour_complex.real = contour[:, 0]
@@ -13,8 +13,18 @@ def fourier_descriptors(contour):
 
     # Apply Fourier Transform
     descriptors = np.fft.fft(contour_complex)
-    
-    return descriptors
+
+    if num_coefficients is not None:
+        descriptors_truncated = np.empty(num_coefficients, dtype=complex)
+        for m in range(0,num_coefficients):
+            if (m <= np.floor(num_coefficients/2)):
+                descriptors_truncated[m] = descriptors[m]
+            else:
+                descriptors_truncated[m] = descriptors[len(descriptors) - num_coefficients + m]
+            
+        return descriptors_truncated
+    else:
+        return descriptors
 
 def reduce_fourier_length(descriptors, num_coefficients):
     descriptors_truncated = np.empty(num_coefficients, dtype=complex)

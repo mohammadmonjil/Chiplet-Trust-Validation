@@ -1,3 +1,7 @@
+from fourier import *
+from useful import *
+import cv2
+
 class shape_packet:
 
     def __init__(self):
@@ -6,7 +10,15 @@ class shape_packet:
         self.bbox = (0,0,0,0)
         self.blob_img = []
         self.centroid = []
-        
+        self.fourier = []
+        self.num_fourier_coeff = 40
+
+    def set_shape_descriptor(self):
+        contour, _ = cv2.findContours(self.blob_img.astype(np.uint8) * 255 , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        gx,gy = sample_polygon_uniformly(contour[0],50)
+        contour_sampled = np.column_stack((gx, gy)).astype(np.int32)
+        self.fourier = fourier_descriptors(contour_sampled, self.num_fourier_coeff) 
+
     def set_centroid(self):
         total_rows, total_cols = self.blob_img.shape
 

@@ -6,6 +6,7 @@ import bisect
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+from fourier import *
 
 class Cell_extractor(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, pipe_from_extractor_head):
@@ -50,9 +51,9 @@ class Cell_extractor(multiprocessing.Process):
                 # plt.show()
                 # print(current_window)
                 img_bin = my_preprocessing( np.array(current_window)[:,:,0]  )
-                plt.imshow(img_bin, cmap = 'gray')
-                plt.show()
-                print(img_bin)
+                # plt.imshow(img_bin, cmap = 'gray')
+                # plt.show()
+                # print(img_bin)
                 # perform prepcossing
                 # layout, layout_denoised, layout_bin, th = pre_processing(layout_path)
                 blobs_layout = connected_components(img_bin)
@@ -83,6 +84,7 @@ class Cell_extractor(multiprocessing.Process):
                         
                     else:
                         # shape_pkts.append(pkt)
+                        pkt.set_shape_descriptor()
                         self.cell_queue.put(pkt)
                         i_cells = i_cells + 1
                 
@@ -103,7 +105,6 @@ class Cell_extractor(multiprocessing.Process):
         self.extractor_done_event.set() # signal end of processing all the windows
         
         # print(f"{self.name} {self.pid}: all packets sent. Now exiting")
-
 
 class Cell_collector(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, 
@@ -301,7 +302,7 @@ class Cell_merger(multiprocessing.Process):
     
                     merged_pkt.blob_img = merged_image
                     merged_pkt.set_centroid()
-                    
+                    merged_pkt.set_shape_descriptor()
                     self.cell_queue.put(merged_pkt)
                     # print(f'{self.name} merged and sent 1 packet')
                     
@@ -330,17 +331,87 @@ class Cell_validation(multiprocessing.Process):
         self.pipe_from_collector_tail_SEM = pipe_from_collector_tail_SEM
         self.row_event_collector_validator_layout = row_event_collector_validator_layout
         self.row_event_collector_validator_SEM = row_event_collector_validator_SEM
+
+        self.cell_list_SEM = []
+        self.cell_list_layout = []
+        self.rcv_cells_layout_thread_running = False
+        self.rcv_cells_SEM_thread_running = False
+        self.rcv_cells_layout_thread = threading.Thread(target= self.rcv_cells, args =(self.sorted_cell_queue_layout, self.cell_list_layout, 
+                                                                                       self.collector_done_event_layout, 'layout' ) )
+        self.rcv_cells_SEM_thread = threading.Thread(target=self.rcv_cells, args =(self.sorted_cell_queue_SEM, self.cell_list_SEM, 
+                                                                                   self.collector_done_event_SEM, 'SEM' ))
+        self.threshold = 0.8
+        self.rows = 0
+        self.report = open('report.txt', 'w')
+        self.total_cells_layout = 0
+        self.total_cells_SEM = 0
+
     
     def run(self):
         self.name = multiprocessing.current_process().name
+        
+        self.rcv_cells_layout_thread.start()
+        self.rcv_cells_layout_thread_running = True
+        self.rcv_cells_SEM_thread.start()
+        self.rcv_cells_SEM_thread_running = True
 
         while True:
-            list = self.sorted_cell_queue_layout.get()
-            print(f"{self.name}: {self.pid} list received with length= {len(list)}")
-
-            if self.collector_done_event_layout.is_set() and self.collector_done_event_SEM.is_set():
-                print(f'{self.name} is now exiting')
+            if not self.rcv_cells_layout_thread_running and not self.rcv_cells_SEM_thread_running:
+                self.validate()
                 break
-            # for pkt in list:
-            #     plt.imshow(pkt.blob_img)
-            #     plt.show()
+            else:
+                self.validate()
+        self.report.write(f'Total cells in layout = {self.total_cells_layout}\n')
+        self.report.write(f'Total cells in SEM = {self.total_cells_SEM}\n')
+        self.report.close()
+
+    def validate(self):
+
+        if self.row_event_collector_validator_layout.is_set() and self.row_event_collector_validator_SEM.is_set():
+            self.row_event_collector_validator_layout.clear()
+            self.row_event_collector_validator_SEM.clear()
+            N_cells_layout = self.pipe_from_collector_tail_layout.recv()
+            N_cells_SEM = self.pipe_from_collector_tail_SEM.recv()
+            self.total_cells_layout = self.total_cells_layout + N_cells_layout
+            self.total_cells_SEM = self.total_cells_SEM + N_cells_SEM
+
+            # self.report.write(f'cells in layout = {N_cells_layout} cells in SEM = {N_cells_SEM}\n')
+            
+            if N_cells_layout > N_cells_SEM:
+                self.report.write(f'Cell removal detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+                self.cell_list_layout = []
+                self.cell_list_SEM = []
+            elif N_cells_layout < N_cells_SEM:
+                self.report.write(f'Cell addition detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+                self.cell_list_layout = []
+                self.cell_list_SEM = []
+            else:
+                self.report.write(f'row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+                # self.shape_validate( self.cell_list_layout[:N_cells_layout], self.cell_list_SEM[:N_cells_SEM])
+                del self.cell_list_layout[:N_cells_layout]
+                del self.cell_list_SEM[:N_cells_SEM]       
+            self.rows = self.rows + 1
+
+    def shape_validate(self, cell_list_layout, cell_list_SEM ):
+
+        for pkt_layout, pkt_SEM in zip(cell_list_layout, cell_list_SEM):
+            f_similarity = calculate_similarity(pkt_layout.fourier, pkt_SEM.fourier)
+
+            if f_similarity < self.threshold:
+                self.report.write(f'Cell modification detected at row = {self.rows}')
+
+    def rcv_cells(self, cell_queue, cell_list, collector_done_event, type_name):
+        
+        while True:
+            if collector_done_event.is_set():
+                if not cell_queue.empty():
+                    cell_list.extend(cell_queue.get())                  
+                else:
+                    if type_name == 'layout':
+                        self.rcv_cells_layout_thread_running = False
+                    elif type_name == 'SEM':
+                        self.rcv_cells_SEM_thread_running = False
+                    break
+            else:
+                if not cell_queue.empty():
+                    cell_list.extend(cell_queue.get()) 
