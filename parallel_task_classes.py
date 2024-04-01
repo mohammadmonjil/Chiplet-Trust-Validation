@@ -58,9 +58,11 @@ class Cell_extractor(multiprocessing.Process):
                 # plt.show()
                 # print(current_window)
                 img_bin = my_preprocessing( np.array(current_window)[:,:,0]  )
-                # plt.imshow(img_bin, cmap = 'gray')
-                # plt.show()
-                # print(img_bin)
+
+                # if self.type_name == '_layout':
+                #     plt.imshow(img_bin, cmap = 'gray')
+                #     plt.show()
+                #     print(i_cells)
                 # perform prepcossing
                 # layout, layout_denoised, layout_bin, th = pre_processing(layout_path)
                 blobs_layout = connected_components(img_bin)
@@ -108,7 +110,7 @@ class Cell_extractor(multiprocessing.Process):
             self.pipe_from_extractor_head.send(i_cells)
             i_cells = 0 # reset the cell counter to zero for the next row of the windows
             self.row_done_event.set() # one row of the windows have been processed
-
+            # print(f'{self.name} win_row_index = {win_row_index}')
             # win_row_index = win_row_index + 1
 
             # if last_row_flag:
@@ -116,7 +118,7 @@ class Cell_extractor(multiprocessing.Process):
 
         self.extractor_done_event.set() # signal end of processing all the windows
         
-        # print(f"{self.name} {self.pid}: all packets sent. Now exiting")
+        print(f"{self.name} is now exiting")
 
 class Cell_collector(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, 
@@ -170,16 +172,17 @@ class Cell_collector(multiprocessing.Process):
                     self.row_event_collector_validator.set()                    
                     cell_count = self.pipe_from_extractor_tail.recv()  # Number of cells in the current row
                     self.pipe_from_collector_head.send(cell_count) # send the number of cells to the validator
-                    # print(f'{self.name} Number of cells in current row = {cell_count}')
+                    print(f'{self.name} Number of cells in current row = {cell_count}')
 
                     while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
+                        # print("I am heresss")
                         pass
                     
                     self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
                     del self.sorted_cell_list[:cell_count]
                     
             else: # when the child thread has finished, send whatever cells are in the list to the queue and exit
-                
+                print('I am here')
                 if len(self.sorted_cell_list) > 0:
                     self.sorted_cell_queue.put(self.sorted_cell_list)
                     self.sorted_cell_list = []
@@ -187,7 +190,7 @@ class Cell_collector(multiprocessing.Process):
                 self.collector_done_event.set()
                 break
 
-        print(f'\n {self.name} Parent thread exiting')
+        print(f'\n {self.name} is now exiting')
 
 class Cell_merger(multiprocessing.Process):
     def __init__(self, type_name, partial_cell_queue, cell_queue, extractor_done_event, merger_done_event):
@@ -232,7 +235,7 @@ class Cell_merger(multiprocessing.Process):
                         window_x = window_x_1
             # print(f"{self.name}: {self.pid} Partial cell received with window coordinate= {window_partial_cells.window_coordinates}")
             # plt.imshow( pkt.blob_img )
-            # plt.show()
+        print(f'{self.name} is exiting')
     
     def merge_cells( self, p1, p2 ):
         
@@ -411,7 +414,8 @@ class Cell_validation(multiprocessing.Process):
             # print(f_similarity)
 
             if f_similarity < self.threshold:
-                self.report.write(f'Cell modification detected at row = {self.rows}')
+                pass
+                # self.report.write(f'Cell modification detected at row = {self.rows}')
 
     def rcv_cells(self, cell_queue, cell_list, collector_done_event, type_name):
         
