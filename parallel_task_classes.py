@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from fourier import *
+from extra import *
 
 class Cell_extractor(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, pipe_from_extractor_head):
@@ -31,11 +32,17 @@ class Cell_extractor(multiprocessing.Process):
         win_col_length = int(im_col_length/num_window_col)
         
         # total_windows = num_window_row*num_window_col
-
+        adaptive_window = Adaptive_window(self.path, win_col_length)
         # i_windows = 0  # track how many windows have been processed
         i_cells = 0 # track how many cells have been collected for the current row. Currently counting complete cells and partial cells of type 8.
         
         for win_row_index in range(0,num_window_row):
+        # win_row_index = 0
+
+        # while True:
+
+            # start_row, end_row, last_row_flag = adaptive_window.get_window_rows()
+            
             for win_col_index in range(0,num_window_col):
                 # current_window = layout[win_row_index*win_row_length: (win_row_index+1)*win_row_length
                 #                             ,win_col_index*win_col_length: (win_col_index+1)*win_col_length]
@@ -101,6 +108,11 @@ class Cell_extractor(multiprocessing.Process):
             self.pipe_from_extractor_head.send(i_cells)
             i_cells = 0 # reset the cell counter to zero for the next row of the windows
             self.row_done_event.set() # one row of the windows have been processed
+
+            # win_row_index = win_row_index + 1
+
+            # if last_row_flag:
+            #     break
 
         self.extractor_done_event.set() # signal end of processing all the windows
         
