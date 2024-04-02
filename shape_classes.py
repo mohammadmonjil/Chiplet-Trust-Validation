@@ -19,6 +19,9 @@ class shape_packet:
         contour_sampled = np.column_stack((gx, gy)).astype(np.int32)
         self.fourier = fourier_descriptors(contour_sampled, self.num_fourier_coeff) 
 
+        # self.blob_img = []
+        # self.fourier = []
+
     def set_centroid(self):
         total_rows, total_cols = self.blob_img.shape
 

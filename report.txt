@@ -1,2 +1,2 @@
-Total cells in layout = 160
-Total cells in SEM = 160
+Total cells in layout = 162
+Total cells in SEM = 162
