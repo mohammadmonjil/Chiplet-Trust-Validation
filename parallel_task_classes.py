@@ -10,7 +10,7 @@ from fourier import *
 from extra import *
 
 class Cell_extractor(multiprocessing.Process):
-    def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event, pipe_from_extractor_head):
+    def __init__(self, type_name, cell_queue, partial_cell_queue, path, extractor_done_event, row_done_event):
         multiprocessing.Process.__init__(self)
         self.type_name = type_name
         self.cell_queue = cell_queue  
@@ -18,7 +18,6 @@ class Cell_extractor(multiprocessing.Process):
         self.path = path
         self.extractor_done_event = extractor_done_event
         self.row_done_event = row_done_event
-        self.pipe_from_extractor_head = pipe_from_extractor_head
     
     def run(self):
         self.name = multiprocessing.current_process().name + self.type_name
@@ -27,7 +26,7 @@ class Cell_extractor(multiprocessing.Process):
         image = Image.open(self.path)
         im_col_length, im_row_length  = image.size
         num_window_row = 9
-        num_window_col = 3
+        num_window_col = 4
         win_row_length = int(im_row_length/num_window_row)
         win_col_length = int(im_col_length/num_window_col)
         
@@ -85,7 +84,7 @@ class Cell_extractor(multiprocessing.Process):
                     if ( max_col == win_col_length ) :
                         pkt.packet_type = 4
                         window_partial_cells.type_4_pkts.append(pkt)
-                        i_cells = i_cells + 1
+                        # i_cells = i_cells + 1
                         # # print("found type",pkt.packet_type)
                     elif ( min_col == 0 ) :
                         pkt.packet_type = 8
@@ -107,8 +106,9 @@ class Cell_extractor(multiprocessing.Process):
             
             
             # send the number of cells
-            self.pipe_from_extractor_head.send(i_cells)
-            i_cells = 0 # reset the cell counter to zero for the next row of the windows
+            # self.pipe_from_extractor_head.send(i_cells)
+            # i_cells = 0 # reset the cell counter to zero for the next row of the windows
+            # print(f'{self.name} cells extracted {i_cells}')
             self.row_done_event.set() # one row of the windows have been processed
             # print(f'{self.name} win_row_index = {win_row_index}')
             # win_row_index = win_row_index + 1
@@ -117,13 +117,13 @@ class Cell_extractor(multiprocessing.Process):
             #     break
 
         self.extractor_done_event.set() # signal end of processing all the windows
-        
-        print(f"{self.name} is now exiting")
+        print(f'\n{self.name} Total cells extracted {i_cells}')       
+        # print(f"{self.name} is now exiting")
 
 class Cell_collector(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, sorted_cell_queue, extractor_done_event, merger_done_event, 
-                 row_done_event, pipe_from_extractor_tail, collector_done_event,
-                 pipe_from_collector_head, row_event_collector_validator): 
+                 row_done_event, collector_done_event,
+                 row_event_collector_validator): 
         multiprocessing.Process.__init__(self)
         self.type_name = type_name
         self.cell_queue = cell_queue  
@@ -131,9 +131,7 @@ class Cell_collector(multiprocessing.Process):
         self.extractor_done_event = extractor_done_event
         self.merger_done_event = merger_done_event
         self.row_done_event = row_done_event
-        self.pipe_from_extractor_tail = pipe_from_extractor_tail
         self.collector_done_event = collector_done_event
-        self.pipe_from_collector_head = pipe_from_collector_head
         self.row_event_collector_validator = row_event_collector_validator
         self.sorted_cell_list = []
         self.collect_sort_thread = threading.Thread(target=self.collect_sort)
@@ -164,33 +162,38 @@ class Cell_collector(multiprocessing.Process):
         self.collect_sort_thread.start()
         self.collect_sort_thread_running = True
         
+        total_count = 0
         while True:
 
             if self.collect_sort_thread_running:
                 if self.row_done_event.is_set():
                     self.row_done_event.clear()     
-                    self.row_event_collector_validator.set()                    
-                    cell_count = self.pipe_from_extractor_tail.recv()  # Number of cells in the current row
-                    self.pipe_from_collector_head.send(cell_count) # send the number of cells to the validator
-                    print(f'{self.name} Number of cells in current row = {cell_count}')
+                    self.row_event_collector_validator.set()
 
-                    while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
-                        # print("I am heresss")
-                        pass
+                    cell_count = len(self.sorted_cell_list)
+                    total_count = total_count + cell_count
+                    # cell_count = self.pipe_from_extractor_tail.recv()  # Number of cells in the current row
+                    # self.pipe_from_collector_head.send(cell_count) # send the number of cells to the validator
+                    # print(f'\n {self.name} Number of cells = {cell_count}')
+
+                    # while len(self.sorted_cell_list) < cell_count: # We wait untill the sorted list has cell_count number of cells
+                    #     # print("I am heresss")
+                    #     pass
                     
                     self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
                     del self.sorted_cell_list[:cell_count]
                     
             else: # when the child thread has finished, send whatever cells are in the list to the queue and exit
-                print('I am here')
+                # print('I am here')
                 if len(self.sorted_cell_list) > 0:
+                    total_count = total_count + len(self.sorted_cell_list) 
                     self.sorted_cell_queue.put(self.sorted_cell_list)
                     self.sorted_cell_list = []
                 
                 self.collector_done_event.set()
                 break
 
-        print(f'\n {self.name} is now exiting')
+        print(f'\n {self.name} is now exiting, total cells collected = {total_count}')
 
 class Cell_merger(multiprocessing.Process):
     def __init__(self, type_name, partial_cell_queue, cell_queue, extractor_done_event, merger_done_event):
@@ -200,6 +203,7 @@ class Cell_merger(multiprocessing.Process):
         self.cell_queue = cell_queue  
         self.extractor_done_event = extractor_done_event
         self.merger_done_event = merger_done_event
+        self.merged_cells = 0
     
     def run(self):
         self.name = multiprocessing.current_process().name + self.type_name
@@ -235,7 +239,7 @@ class Cell_merger(multiprocessing.Process):
                         window_x = window_x_1
             # print(f"{self.name}: {self.pid} Partial cell received with window coordinate= {window_partial_cells.window_coordinates}")
             # plt.imshow( pkt.blob_img )
-        print(f'{self.name} is exiting')
+        print(f'\n{self.name} total cells merged = {self.merged_cells}')
     
     def merge_cells( self, p1, p2 ):
         
@@ -319,6 +323,7 @@ class Cell_merger(multiprocessing.Process):
                     merged_pkt.set_centroid()
                     merged_pkt.set_shape_descriptor()
                     self.cell_queue.put(merged_pkt)
+                    self.merged_cells = self.merged_cells + 1
                     # print(f'{self.name} merged and sent 1 packet')
                     
                     # shape_pkts.append(merged_pkt)
@@ -334,7 +339,6 @@ class Cell_validation(multiprocessing.Process):
 
     def __init__(self, sorted_cell_queue_layout, sorted_cell_queue_SEM, 
                                       collector_done_event_layout, collector_done_event_SEM,
-                                      pipe_from_collector_tail_layout, pipe_from_collector_tail_SEM, 
                                       row_event_collector_validator_layout, row_event_collector_validator_SEM):
         
         multiprocessing.Process.__init__(self)
@@ -342,8 +346,6 @@ class Cell_validation(multiprocessing.Process):
         self.sorted_cell_queue_SEM = sorted_cell_queue_SEM  
         self.collector_done_event_layout = collector_done_event_layout
         self.collector_done_event_SEM = collector_done_event_SEM
-        self.pipe_from_collector_tail_layout = pipe_from_collector_tail_layout
-        self.pipe_from_collector_tail_SEM = pipe_from_collector_tail_SEM
         self.row_event_collector_validator_layout = row_event_collector_validator_layout
         self.row_event_collector_validator_SEM = row_event_collector_validator_SEM
 
@@ -360,6 +362,7 @@ class Cell_validation(multiprocessing.Process):
         self.report = open('report.txt', 'w')
         self.total_cells_layout = 0
         self.total_cells_SEM = 0
+        self.cell_chunk = 10
 
     
     def run(self):
@@ -372,7 +375,14 @@ class Cell_validation(multiprocessing.Process):
 
         while True:
             if not self.rcv_cells_layout_thread_running and not self.rcv_cells_SEM_thread_running:
-                self.validate()
+                N_cells_SEM = len(self.cell_list_SEM)
+                N_cells_layout = len(self.cell_list_layout)
+                self.total_cells_layout = self.total_cells_layout + N_cells_layout
+                self.total_cells_SEM = self.total_cells_SEM + N_cells_SEM
+
+                if N_cells_layout == N_cells_SEM:
+                    self.shape_validate( self.cell_list_layout, self.cell_list_SEM)
+
                 break
             else:
                 self.validate()
@@ -381,31 +391,45 @@ class Cell_validation(multiprocessing.Process):
         self.report.close()
 
     def validate(self):
+        
+        if len(self.cell_list_layout) > self.cell_chunk and len(self.cell_list_SEM) > self.cell_chunk:
+            self.total_cells_layout = self.total_cells_layout + self.cell_chunk 
+            self.total_cells_SEM = self.total_cells_SEM + self.cell_chunk 
+            self.shape_validate( self.cell_list_layout[:self.cell_chunk], self.cell_list_SEM[:self.cell_chunk])
+            del self.cell_list_layout[:self.cell_chunk]
+            del self.cell_list_SEM[:self.cell_chunk]
 
-        if self.row_event_collector_validator_layout.is_set() and self.row_event_collector_validator_SEM.is_set():
-            self.row_event_collector_validator_layout.clear()
-            self.row_event_collector_validator_SEM.clear()
-            N_cells_layout = self.pipe_from_collector_tail_layout.recv()
-            N_cells_SEM = self.pipe_from_collector_tail_SEM.recv()
-            self.total_cells_layout = self.total_cells_layout + N_cells_layout
-            self.total_cells_SEM = self.total_cells_SEM + N_cells_SEM
+        # if self.row_event_collector_validator_layout.is_set() and self.row_event_collector_validator_SEM.is_set():
+        #     self.row_event_collector_validator_layout.clear()
+        #     self.row_event_collector_validator_SEM.clear()
+        #     # N_cells_layout = self.pipe_from_collector_tail_layout.recv()
+        #     # N_cells_SEM = self.pipe_from_collector_tail_SEM.recv()
+        #     N_cells_layout = len(self.cell_list_layout)
+        #     N_cells_SEM = len(self.cell_list_SEM)
+        #     N_cells = min(N_cells_layout, N_cells_SEM)
+        #     # print(f'\n{self.name} layout cells = {N_cells_layout} SEM cells = {N_cells_SEM}')
+        #     self.total_cells_layout = self.total_cells_layout + N_cells
+        #     self.total_cells_SEM = self.total_cells_SEM + N_cells
 
-            # self.report.write(f'cells in layout = {N_cells_layout} cells in SEM = {N_cells_SEM}\n')
+        #     self.shape_validate( self.cell_list_layout[:N_cells], self.cell_list_SEM[:N_cells])
+        #     del self.cell_list_layout[:N_cells]
+        #     del self.cell_list_SEM[:N_cells]   
+        #     # self.report.write(f'cells in layout = {N_cells_layout} cells in SEM = {N_cells_SEM}\n')
             
-            if N_cells_layout > N_cells_SEM:
-                self.report.write(f'Cell removal detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
-                self.cell_list_layout = []
-                self.cell_list_SEM = []
-            elif N_cells_layout < N_cells_SEM:
-                self.report.write(f'Cell addition detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
-                self.cell_list_layout = []
-                self.cell_list_SEM = []
-            else:
-                self.report.write(f'row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
-                self.shape_validate( self.cell_list_layout[:N_cells_layout], self.cell_list_SEM[:N_cells_SEM])
-                del self.cell_list_layout[:N_cells_layout]
-                del self.cell_list_SEM[:N_cells_SEM]       
-            self.rows = self.rows + 1
+        #     # if N_cells_layout > N_cells_SEM:
+        #     #     self.report.write(f'Cell removal detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+        #     #     self.cell_list_layout = []
+        #     #     self.cell_list_SEM = []
+        #     # elif N_cells_layout < N_cells_SEM:
+        #     #     self.report.write(f'Cell addition detected at row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+        #     #     self.cell_list_layout = []
+        #     #     self.cell_list_SEM = []
+        #     # else:
+        #     #     self.report.write(f'row = {self.rows}, cells in layout = {N_cells_layout}, cells in SEM = {N_cells_SEM} \n')
+        #     #     self.shape_validate( self.cell_list_layout[:N_cells_layout], self.cell_list_SEM[:N_cells_SEM])
+        #     #     del self.cell_list_layout[:N_cells_layout]
+        #     #     del self.cell_list_SEM[:N_cells_SEM]       
+        #     self.rows = self.rows + 1
 
     def shape_validate(self, cell_list_layout, cell_list_SEM ):
 

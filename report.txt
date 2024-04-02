@@ -1,11 +1,2 @@
-row = 0, cells in layout = 18, cells in SEM = 18 
-row = 1, cells in layout = 27, cells in SEM = 27 
-row = 2, cells in layout = 26, cells in SEM = 26 
-row = 3, cells in layout = 26, cells in SEM = 26 
-row = 4, cells in layout = 27, cells in SEM = 27 
-row = 5, cells in layout = 27, cells in SEM = 27 
-row = 6, cells in layout = 27, cells in SEM = 27 
-row = 7, cells in layout = 17, cells in SEM = 17 
-row = 8, cells in layout = 18, cells in SEM = 18 
-Total cells in layout = 213
-Total cells in SEM = 213
+Total cells in layout = 160
+Total cells in SEM = 160
