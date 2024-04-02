@@ -25,7 +25,7 @@ class Cell_extractor(multiprocessing.Process):
         image = Image.open(self.path)
         im_col_length, im_row_length  = image.size
         num_window_row = 9
-        num_window_col = 5
+        num_window_col = 3
         win_row_length = int(im_row_length/num_window_row)
         win_col_length = int(im_col_length/num_window_col)
         
@@ -34,18 +34,18 @@ class Cell_extractor(multiprocessing.Process):
         # i_windows = 0  # track how many windows have been processed
         i_cells = 0 # track how many cells have been collected for the current row. Currently counting complete cells and partial cells of type 8.
         
-        for win_row_index in range(0,num_window_row):
+        # for win_row_index in range(0,num_window_row):
         # win_row_index = 0
 
-        # while True:
+        while True:
 
-            # start_row, end_row, last_row_flag = adaptive_window.get_window_rows()
+            start_row, end_row, last_row_flag = adaptive_window.get_window_rows()
             
             for win_col_index in range(0,num_window_col):
                 # current_window = layout[win_row_index*win_row_length: (win_row_index+1)*win_row_length
                 #                             ,win_col_index*win_col_length: (win_col_index+1)*win_col_length]
-                start_row = win_row_index * win_row_length
-                end_row = min((win_row_index + 1) * win_row_length, im_row_length)
+                # start_row = win_row_index * win_row_length
+                # end_row = min((win_row_index + 1) * win_row_length, im_row_length)
                 start_col = win_col_index * win_col_length
                 end_col = min((win_col_index + 1) * win_col_length, im_col_length)
         
@@ -64,8 +64,8 @@ class Cell_extractor(multiprocessing.Process):
                 # perform prepcossing
                 # layout, layout_denoised, layout_bin, th = pre_processing(layout_path)
                 blobs_layout = connected_components(img_bin)
-                window_coordinates = (win_row_index, win_col_index)
-                window_partial_cells = Window_partial_cells( window_coordinates )
+                # window_coordinates = (win_row_index, win_col_index)
+                window_partial_cells = Window_partial_cells( win_col_index )
 
                 for blob in blobs_layout:
                     blob_img = blob.image
@@ -110,10 +110,9 @@ class Cell_extractor(multiprocessing.Process):
             # print(f'{self.name} cells extracted {i_cells}')
             self.row_done_event.set() # one row of the windows have been processed
             # print(f'{self.name} win_row_index = {win_row_index}')
-            # win_row_index = win_row_index + 1
 
-            # if last_row_flag:
-            #     break
+            if last_row_flag:
+                break
         
         self.cell_queue.put(None)
         self.partial_cell_queue.put(None)
@@ -195,7 +194,7 @@ class Cell_merger(multiprocessing.Process):
                     break
                 window_coordinates = window_partial_cells.window_coordinates
                 
-                if window_coordinates[1] == 0:    # Check if it is start of a row 
+                if window_coordinates == 0:    # Check if it is start of a row 
                     window_x = window_partial_cells
                 else:
                     window_x_1 = window_partial_cells
