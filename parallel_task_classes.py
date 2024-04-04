@@ -7,7 +7,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 from fourier import *
-from extra import *
 
 class Cell_extractor(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, partial_cell_queue, path, row_done_event):
@@ -160,14 +159,18 @@ class Cell_collector(multiprocessing.Process):
 
                 cell_count = len(self.sorted_cell_list)
                 total_count = total_count + cell_count
-                self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
-                del self.sorted_cell_list[:cell_count]
+                
+                if cell_count > 0:
+                    self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
+                    del self.sorted_cell_list[:cell_count]
 
             if None_received ==2:
                 cell_count = len(self.sorted_cell_list)
                 total_count = total_count + cell_count
-                self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
-                del self.sorted_cell_list[:cell_count]
+
+                if cell_count > 0:
+                    self.sorted_cell_queue.put(self.sorted_cell_list[:cell_count])
+                    del self.sorted_cell_list[:cell_count]
                 break
         
         
