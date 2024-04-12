@@ -13,15 +13,15 @@ class shape_packet:
         self.blob_img = []
         self.centroid = []
         self.fourier = []
-        self.num_fourier_coeff = 40
+        self.num_fourier_coeff = 10
 
     def set_shape_descriptor(self):
         contour, _ = cv2.findContours(self.blob_img.astype(np.uint8) * 255 , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        gx,gy = sample_polygon_uniformly(contour[0],50)
-        contour_sampled = np.column_stack((gx, gy)).astype(np.int32)
+        gx,gy = sample_polygon_uniformly(contour[0],100)
+        contour_sampled = gx + gy*1.0j
         self.fourier = fourier_descriptors(contour_sampled, self.num_fourier_coeff) 
         self.fourier[0] = 0 # make translation invariant
-        self.fourier = self.fourier/ np.sqrt( np.sum( (np.abs(self.fourier))**2) ) #make scale invariant
+        self.fourier = self.fourier/ np.sqrt( np.sum( (np.abs(self.fourier))**2) ) # make scale invariant
         self.Ga, self.Gb = make_start_point_invariant(self.fourier)
         # self.blob_img = []
         # self.fourier = []

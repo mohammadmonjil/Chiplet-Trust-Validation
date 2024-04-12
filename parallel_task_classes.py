@@ -320,7 +320,7 @@ class Cell_validation(multiprocessing.Process):
                                                                                       'layout' ) )
         self.rcv_cells_SEM_thread = threading.Thread(target=self.rcv_cells, args =(self.sorted_cell_queue_SEM, self.cell_list_SEM, 
                                                                                    'SEM' ))
-        self.threshold = 0.8
+        self.threshold = 0.2
         self.rows = 0
         self.report = open('report.txt', 'w')
         self.total_cells_layout = 0
@@ -348,8 +348,8 @@ class Cell_validation(multiprocessing.Process):
                 break
             else:
                 self.validate()
-        self.report.write(f'Total cells in layout = {self.total_cells_layout}\n')
-        self.report.write(f'Total cells in SEM = {self.total_cells_SEM}\n')
+        self.report.write(f'\nTotal cells in layout = {self.total_cells_layout}')
+        self.report.write(f'\nTotal cells in SEM = {self.total_cells_SEM}')
         self.report.close()
 
     def validate(self):
@@ -365,12 +365,17 @@ class Cell_validation(multiprocessing.Process):
 
         for pkt_layout, pkt_SEM in zip(cell_list_layout, cell_list_SEM):
             # pass
-            f_similarity = calculate_similarity(pkt_layout.fourier, pkt_SEM.fourier)
+            # f_similarity = calculate_similarity(pkt_layout.fourier, pkt_SEM.fourier)
+            distance =  min ( complex_l2( pkt_layout.Ga, pkt_SEM.Ga) , complex_l2( pkt_layout.Ga, pkt_SEM.Gb) ,
+                             complex_l2( pkt_layout.Gb, pkt_SEM.Ga) , complex_l2( pkt_layout.Gb, pkt_SEM.Gb) )
             # # print(f_similarity)
-
-            if f_similarity < self.threshold:
-                pass
-                # self.report.write(f'Cell modification detected at row = {self.rows}')
+            self.report.write(f'\n Distance ={distance}')
+            if distance > self.threshold:
+                # pass
+                self.report.write(f'\nCell modification detected')
+                # self.report.write(f'\n Distance ={distance}')
+                # plt.imshow(pkt_SEM.blob_img)
+                # plt.show()
 
     def rcv_cells(self, cell_queue, cell_list, type_name):
         

@@ -76,3 +76,7 @@ def shift_start_point_phase(G, phi):
 def complex_l2(f1,f2):
     a = f1 -f2
     return np.sqrt(np.sum((a.real)**2 + (a.imag)**2))
+
+def complex_l2_sqrd(f1,f2):
+    a = f1 -f2
+    return np.sum((a.real)**2 + (a.imag)**2)
