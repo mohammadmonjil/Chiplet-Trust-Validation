@@ -19,105 +19,89 @@ class Cell_extractor(multiprocessing.Process):
     
     def run(self):
         self.name = multiprocessing.current_process().name + self.type_name
+        
+####################### No Window Direct Image START #########################################
+        window = No_window(self.path)
 
-        # image = read_input(self.path)
-        image = Image.open(self.path)
-        im_col_length, im_row_length  = image.size
-        num_window_row = 9
-        num_window_col = 3
-        win_row_length = int(im_row_length/num_window_row)
-        win_col_length = int(im_col_length/num_window_col)
-        
-        # total_windows = num_window_row*num_window_col
-        adaptive_window = Adaptive_window(self.path, win_col_length)
-        # i_windows = 0  # track how many windows have been processed
-        i_cells = 0 # track how many cells have been collected for the current row. Currently counting complete cells and partial cells of type 8.
-        
-        # for win_row_index in range(0,num_window_row):
-        # win_row_index = 0
+        i_cells = 0
 
         while True:
-
-            start_row, end_row, last_row_flag = adaptive_window.get_window_rows()
+            current_window, last_window = window.get_current_window()
+            blobs_layout = connected_components(current_window)
             
-            for win_col_index in range(0,num_window_col):
-                # current_window = layout[win_row_index*win_row_length: (win_row_index+1)*win_row_length
-                #                             ,win_col_index*win_col_length: (win_col_index+1)*win_col_length]
-                # start_row = win_row_index * win_row_length
-                # end_row = min((win_row_index + 1) * win_row_length, im_row_length)
-                start_col = win_col_index * win_col_length
-                end_col = min((win_col_index + 1) * win_col_length, im_col_length)
-        
-                # current_window = image[start_row:end_row, start_col:end_col]
-                current_window = image.crop(( start_col, start_row, end_col, end_row ))
-                # current_window = np.array(current_window)[:,:,0] 
-                # plt.imshow(current_window)
-                # plt.show()
-                # print(current_window)
-                img_bin = my_preprocessing( np.array(current_window)[:,:,0]  )
 
-                # if self.type_name == '_layout':
-                #     plt.imshow(img_bin, cmap = 'gray')
-                #     plt.show()
-                #     print(i_cells)
-                # perform prepcossing
-                # layout, layout_denoised, layout_bin, th = pre_processing(layout_path)
-                blobs_layout = connected_components(img_bin)
-                # window_coordinates = (win_row_index, win_col_index)
-                window_partial_cells = Window_partial_cells( win_col_index )
+            for blob in blobs_layout:
+                pkt = shape_packet()
+                pkt.bbox = blob.bbox
+                pkt.blob_img = blob.image
+                pkt.centroid = ( int( blob.centroid[0]), int(blob.centroid[1]))
+                pkt.set_shape_descriptor()
+                self.cell_queue.put(pkt)
+                i_cells = i_cells + 1
 
-                for blob in blobs_layout:
-                    blob_img = blob.image
-                    (min_row, min_col, max_row, max_col) = blob.bbox
-                    
-                    pkt = shape_packet()
-                    
-                    pkt.bbox = (min_row+start_row, min_col+start_col, max_row+start_row, max_col+start_col) # we preserve coordinates 
-                    pkt.blob_img = blob_img
-                    # store centroid of shape coordinate in coordinate of original image
-                    # print(start_row,start_col)
-                    pkt.centroid = ( int( blob.centroid[0]+start_row), int(blob.centroid[1]+start_col)) # centroid from skii_image is wrt window image coordinates
+            self.row_done_event.set()
 
-                    
-                    if ( max_col == win_col_length ) :
-                        pkt.packet_type = 4
-                        window_partial_cells.type_4_pkts.append(pkt)
-                        # i_cells = i_cells + 1
-                        # # print("found type",pkt.packet_type)
-                    elif ( min_col == 0 ) :
-                        pkt.packet_type = 8
-                        window_partial_cells.type_8_pkts.append(pkt)
-                        
-                    else:
-                        # shape_pkts.append(pkt)
-                        pkt.set_shape_descriptor()
-                        self.cell_queue.put(pkt)
-                        i_cells = i_cells + 1
-                
-                self.partial_cell_queue.put(window_partial_cells)
-                
-                # i_windows = i_windows + 1
-
-                # if(i_windows == self.N_windows):
-                #     self.window_event.set()
-                #     i_windows = 0
-            
-            
-            # send the number of cells
-            # self.pipe_from_extractor_head.send(i_cells)
-            # i_cells = 0 # reset the cell counter to zero for the next row of the windows
-            # print(f'{self.name} cells extracted {i_cells}')
-            self.row_done_event.set() # one row of the windows have been processed
-            # print(f'{self.name} win_row_index = {win_row_index}')
-
-            if last_row_flag:
+            if last_window:
                 break
         
         self.cell_queue.put(None)
         self.partial_cell_queue.put(None)
-        print(f'\n{self.name} Total cells extracted {i_cells}')       
-        # print(f"{self.name} is now exiting")
+        print(f'\n{self.name} Total cells extracted {i_cells}') 
+
+####################### No Window Direct Image END ###################################
+
+####################### Adaptive Window START #########################################
+        # image = Image.open(self.path)
+        # im_col_length, _  = image.size
+        # num_window_col = 3
+        # win_col_length = int(im_col_length/num_window_col)
         
+        # window = Adaptive_window(self.path, num_window_col)
+
+        # i_cells = 0 # track how many cells have been collected for the current row. Currently counting complete cells and partial cells of type 8.
+        
+        # while True:
+        #     current_window, win_col_index, start_row, _ , start_col, _ , one_row_done, last_window = window.get_current_window()        
+        #     blobs_layout = connected_components(current_window)
+        #     window_partial_cells = Window_partial_cells( win_col_index )
+
+        #     for blob in blobs_layout:
+        #         blob_img = blob.image
+        #         (min_row, min_col, max_row, max_col) = blob.bbox
+                
+        #         pkt = shape_packet()
+                
+        #         pkt.bbox = (min_row+start_row, min_col+start_col, max_row+start_row, max_col+start_col) # we preserve coordinates 
+        #         pkt.blob_img = blob_img
+        #         # store centroid of shape coordinate in coordinate of original image
+        #         pkt.centroid = ( int( blob.centroid[0]+start_row), int(blob.centroid[1]+start_col)) # centroid from skii_image is wrt window image coordinates
+
+                
+        #         if ( max_col == win_col_length ) :
+        #             pkt.packet_type = 4
+        #             window_partial_cells.type_4_pkts.append(pkt)
+        #         elif ( min_col == 0 ) :
+        #             pkt.packet_type = 8
+        #             window_partial_cells.type_8_pkts.append(pkt)
+                    
+        #         else:
+        #             pkt.set_shape_descriptor()
+        #             self.cell_queue.put(pkt)
+        #             i_cells = i_cells + 1
+            
+        #     self.partial_cell_queue.put(window_partial_cells)
+
+        #     if one_row_done:
+        #         self.row_done_event.set() # one row of the windows have been processed
+        #     if last_window:
+        #         break
+        
+        # self.cell_queue.put(None)
+        # self.partial_cell_queue.put(None)
+        # print(f'\n{self.name} Total cells extracted {i_cells}')   
+
+####################### Adaptive Window END #########################################
+
 class Cell_collector(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, sorted_cell_queue,
                  row_done_event, collector_done_event): 
@@ -320,9 +304,10 @@ class Cell_validation(multiprocessing.Process):
                                                                                       'layout' ) )
         self.rcv_cells_SEM_thread = threading.Thread(target=self.rcv_cells, args =(self.sorted_cell_queue_SEM, self.cell_list_SEM, 
                                                                                    'SEM' ))
-        self.threshold = 0.2
+        self.threshold = 0.5
         self.rows = 0
         self.report = open('report.txt', 'w')
+        self.report.write('Report')
         self.total_cells_layout = 0
         self.total_cells_SEM = 0
         self.cell_chunk = 10
@@ -369,7 +354,7 @@ class Cell_validation(multiprocessing.Process):
             distance =  min ( complex_l2( pkt_layout.Ga, pkt_SEM.Ga) , complex_l2( pkt_layout.Ga, pkt_SEM.Gb) ,
                              complex_l2( pkt_layout.Gb, pkt_SEM.Ga) , complex_l2( pkt_layout.Gb, pkt_SEM.Gb) )
             # # print(f_similarity)
-            self.report.write(f'\n Distance ={distance}')
+            # self.report.write(f'\n Distance ={distance}')
             if distance > self.threshold:
                 # pass
                 self.report.write(f'\nCell modification detected')

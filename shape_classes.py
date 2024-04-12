@@ -3,6 +3,7 @@ import cv2
 from PIL import Image
 from useful import *
 import numpy as np
+import os
 
 class shape_packet:
 
@@ -68,20 +69,87 @@ class Window_partial_cells:
         self.type_8_pkts = []
         self.window_coordinates = window_coordinates
 
+class Window:
+    def __init__(self) :
+        pass
+
+class No_window:
+    def __init__(self, data_path):
+        self.data_path = data_path
+        self.files = os.listdir(self.data_path)
+        self.file_index = 0
+    def get_current_window(self):
+        image_path = os.path.join(self.data_path, self.files[self.file_index])
+        img = Image.open(image_path)
+        current_window = np.array(img)
+
+        if current_window.ndim == 3:
+            current_window = my_preprocessing(current_window[:,:,0])
+            
+        self.file_index = self.file_index + 1
+
+        if self.file_index > len(self.files)-1:    
+            return current_window, True
+        else:
+            return current_window, False
+
+class Fixed_window:
+    def __init__(self, path):
+        pass
+
 class Adaptive_window:
-    def __init__(self, path, win_col_length):
+    def __init__(self, path, num_window_col):
+        
         self.image = Image.open(path)
-        _, self.im_row_length  = self.image.size
+        im_col_length, _  = self.image.size
+        self.num_window_col = num_window_col
+        self.win_col_length = int(im_col_length/self.num_window_col)
+
+        self.im_col_length, self.im_row_length  = self.image.size
         self.horizontal_hop = 200
         self.th = 50
         self.start_row = 0
         self.end_row = self.start_row + self.horizontal_hop
         self.start_col = 0
-        self.end_col = self.start_col + win_col_length
+        self.end_col = self.start_col + self.win_col_length
         self.is_this_last_rows = False
         self.first_rows_done =  False
         self.cell_width = 0
-    
+
+        self.win_col_index = 0
+        self.first_call = True
+
+        self.curret_start_row, self.current_end_row, self.current_last_row_flag = self.get_window_rows()
+
+    def get_current_window(self):
+            
+
+        start_col = self.win_col_index * self.win_col_length
+        end_col = min((self.win_col_index + 1) * self.win_col_length, self.im_col_length)
+        current_window = np.array( self.image.crop(( start_col, self.curret_start_row, end_col, self.current_end_row, )) )[:,:,0]
+        current_window = my_preprocessing(current_window)
+
+        temp_win_col_index = self.win_col_index
+        temp_curret_start_row = self.curret_start_row
+        temp_current_end_row = self.current_end_row
+        last_window = False
+        
+        self.win_col_index = self.win_col_index + 1
+
+        if self.win_col_index > self.num_window_col - 1:
+            self.win_col_index = 0
+            one_row_done = True
+        
+            if self.current_last_row_flag:
+                last_window = True
+            else:
+                self.curret_start_row, self.current_end_row, self.current_last_row_flag = self.get_window_rows()
+
+        else:
+            one_row_done = False
+
+        return current_window, temp_win_col_index, temp_curret_start_row, temp_current_end_row, start_col, end_col, one_row_done, last_window
+        
     def get_window_rows(self):
 
         if self.first_rows_done:
