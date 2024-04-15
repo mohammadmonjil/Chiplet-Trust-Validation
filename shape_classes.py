@@ -69,9 +69,9 @@ class Window_partial_cells:
         self.type_8_pkts = []
         self.window_coordinates = window_coordinates
 
-class Window:
-    def __init__(self) :
-        pass
+# class Window:
+#     def __init__(self) :
+#         pass
 
 class No_window:
     def __init__(self, data_path):

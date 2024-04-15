@@ -27,10 +27,10 @@ class Cell_extractor(multiprocessing.Process):
 
         while True:
             current_window, last_window = window.get_current_window()
-            blobs_layout = connected_components(current_window)
+            blobs = connected_components(current_window)
             
 
-            for blob in blobs_layout:
+            for blob in blobs:
                 pkt = shape_packet()
                 pkt.bbox = blob.bbox
                 pkt.blob_img = blob.image
