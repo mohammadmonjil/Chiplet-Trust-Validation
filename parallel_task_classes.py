@@ -19,7 +19,7 @@ class Cell_extractor(multiprocessing.Process):
     
     def run(self):
         self.name = multiprocessing.current_process().name + self.type_name
-        
+
 ####################### No Window Direct Image START #########################################
         window = No_window(self.path)
 
@@ -43,14 +43,11 @@ class Cell_extractor(multiprocessing.Process):
 
             if last_window:
                 break
-        
-        self.cell_queue.put(None)
-        self.partial_cell_queue.put(None)
-        print(f'\n{self.name} Total cells extracted {i_cells}') 
 
 ####################### No Window Direct Image END ###################################
 
 ####################### Adaptive Window START #########################################
+        
         # image = Image.open(self.path)
         # im_col_length, _  = image.size
         # num_window_col = 3
@@ -95,12 +92,13 @@ class Cell_extractor(multiprocessing.Process):
         #         self.row_done_event.set() # one row of the windows have been processed
         #     if last_window:
         #         break
-        
-        # self.cell_queue.put(None)
-        # self.partial_cell_queue.put(None)
-        # print(f'\n{self.name} Total cells extracted {i_cells}')   
 
 ####################### Adaptive Window END #########################################
+
+        self.cell_queue.put(None)
+        self.partial_cell_queue.put(None)
+        print(f'\n{self.name} Total cells extracted {i_cells}')   
+
 
 class Cell_collector(multiprocessing.Process):
     def __init__(self, type_name, cell_queue, sorted_cell_queue,
