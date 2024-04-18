@@ -307,7 +307,7 @@ class Cell_validation(multiprocessing.Process):
                                                                                       'layout' ) )
         self.rcv_cells_SEM_thread = threading.Thread(target=self.rcv_cells, args =(self.sorted_cell_queue_SEM, self.cell_list_SEM, 
                                                                                    'SEM' ))
-        self.threshold = 0.5
+        self.threshold = 0.2
         self.rows = 0
         self.report = open('report.txt', 'w')
         self.report.write('Report')
@@ -361,7 +361,7 @@ class Cell_validation(multiprocessing.Process):
             if distance > self.threshold:
                 # pass
                 self.report.write(f'\nCell modification detected')
-                # self.report.write(f'\n Distance ={distance}')
+                self.report.write(f'\n Distance ={distance}')
                 # plt.imshow(pkt_SEM.blob_img)
                 # plt.show()
 

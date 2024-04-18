@@ -1,3 +1,9 @@
 Report
-Total cells in layout = 306234
-Total cells in SEM = 0
+Cell modification detected
+ Distance =0.34101370327499186
+Cell modification detected
+ Distance =0.3454988326364499
+Cell modification detected
+ Distance =0.32261146076245845
+Total cells in layout = 161
+Total cells in SEM = 160
