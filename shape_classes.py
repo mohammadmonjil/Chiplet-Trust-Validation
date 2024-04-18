@@ -4,9 +4,11 @@ from PIL import Image
 from useful import *
 import numpy as np
 import os
+from scipy import ndimage
 
 class shape_packet:
 
+    
     def __init__(self):
         self.horizontal_threshold = 20
         self.packet_type = 0
@@ -14,7 +16,14 @@ class shape_packet:
         self.blob_img = []
         self.centroid = []
         self.fourier = []
+        self.area = 0
+        self.area_th = 8
         self.num_fourier_coeff = 10
+    
+    def set_properties(self):
+        self.blob_img = ndimage.binary_fill_holes(self.blob_img)
+        self.set_area()
+        self.set_shape_descriptor()
 
     def set_shape_descriptor(self):
         contour, _ = cv2.findContours(self.blob_img.astype(np.uint8) * 255 , cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -27,6 +36,9 @@ class shape_packet:
         # self.blob_img = []
         # self.fourier = []
 
+    def set_area(self):
+        self.area = np.count_nonzero(self.blob_img)
+        
     def set_centroid(self):
         total_rows, total_cols = self.blob_img.shape
 

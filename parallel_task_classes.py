@@ -22,10 +22,11 @@ class Cell_extractor(multiprocessing.Process):
 
 ####################### No Window Direct Image START #########################################
         window = No_window(self.path)
-
+        i_window = 0
         i_cells = 0
 
         while True:
+            print(f'Processing window ={i_window}')
             current_window, last_window = window.get_current_window()
             blobs = connected_components(current_window)
             
@@ -35,12 +36,15 @@ class Cell_extractor(multiprocessing.Process):
                 pkt.bbox = blob.bbox
                 pkt.blob_img = blob.image
                 pkt.centroid = ( int( blob.centroid[0]), int(blob.centroid[1]))
-                pkt.set_shape_descriptor()
-                self.cell_queue.put(pkt)
-                i_cells = i_cells + 1
+                pkt.set_area()
+                
+                if pkt.area > pkt.area_th: # assuming cells will have atleast a size of 3*3
+                    pkt.set_shape_descriptor()
+                    self.cell_queue.put(pkt)
+                    i_cells = i_cells + 1
 
             self.row_done_event.set()
-
+            i_window += 1
             if last_window:
                 break
 
@@ -70,21 +74,22 @@ class Cell_extractor(multiprocessing.Process):
                 
         #         pkt.bbox = (min_row+start_row, min_col+start_col, max_row+start_row, max_col+start_col) # we preserve coordinates 
         #         pkt.blob_img = blob_img
-        #         # store centroid of shape coordinate in coordinate of original image
         #         pkt.centroid = ( int( blob.centroid[0]+start_row), int(blob.centroid[1]+start_col)) # centroid from skii_image is wrt window image coordinates
-
+        #         pkt.set_properties()
                 
+                
+        #         # store centroid of shape coordinate in coordinate of original image
+                    
         #         if ( max_col == win_col_length ) :
         #             pkt.packet_type = 4
         #             window_partial_cells.type_4_pkts.append(pkt)
         #         elif ( min_col == 0 ) :
         #             pkt.packet_type = 8
-        #             window_partial_cells.type_8_pkts.append(pkt)
-                    
+        #             window_partial_cells.type_8_pkts.append(pkt)                      
         #         else:
-        #             pkt.set_shape_descriptor()
-        #             self.cell_queue.put(pkt)
-        #             i_cells = i_cells + 1
+        #             if pkt.area > pkt.area_th:
+        #                 self.cell_queue.put(pkt)
+        #                 i_cells = i_cells + 1
             
         #     self.partial_cell_queue.put(window_partial_cells)
 

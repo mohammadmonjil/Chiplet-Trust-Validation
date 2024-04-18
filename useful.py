@@ -151,7 +151,7 @@ def log_resource_usage(pid_dict, program_done_event):
                 
         cpu_writer.writerow(cpu_dict)
         mem_writer.writerow(memory_dict)
-        time.sleep(0.1)
+        time.sleep(2)
 
     log_cpu.close()
     log_mem.close()
